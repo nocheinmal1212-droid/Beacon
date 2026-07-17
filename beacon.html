@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Beacon — encrypted local transfer</title>
+<style>
+  :root{
+    --ink:#0b1220; --ink2:#0e1626; --panel:#121c30; --panel2:#16233a;
+    --line:#233450; --line2:#2c4066;
+    --text:#dce6f5; --muted:#8497b4; --faint:#5e6f8c;
+    --amber:#f5b544; --amber-dim:#b9832a;
+    --green:#47d18f; --red:#f0655f;
+    --shadow:0 18px 50px -20px rgba(0,0,0,.7);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:
+    radial-gradient(1200px 600px at 78% -10%, #16233a 0%, transparent 60%),
+    radial-gradient(900px 500px at 0% 110%, #101a2c 0%, transparent 55%),
+    var(--ink);
+    color:var(--text);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;min-height:100vh;
+  }
+  a{color:var(--green)}
+  .hidden{display:none !important}
+  .wrap{max-width:760px;margin:0 auto;padding:28px 20px 64px}
+
+  /* ---- header / beacon signature ---- */
+  header{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+  .sigil{position:relative;width:38px;height:38px;flex:none}
+  .sigil .core{position:absolute;inset:15px;border-radius:50%;background:var(--amber);
+    box-shadow:0 0 12px 2px rgba(245,181,68,.7)}
+  .sigil .ring{position:absolute;inset:6px;border:1.5px solid var(--amber-dim);border-radius:50%;
+    opacity:.55;animation:pulse 2.6s ease-out infinite}
+  .sigil .ring.r2{inset:0;animation-delay:1.3s;opacity:.3}
+  @keyframes pulse{0%{transform:scale(.6);opacity:.7}100%{transform:scale(1.25);opacity:0}}
+  h1{font-size:22px;letter-spacing:-.02em;margin:0;font-weight:650}
+  h1 span{color:var(--amber)}
+  .tag{color:var(--muted);font-size:13px;margin:2px 0 0}
+  .status{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);
+    font-family:var(--mono)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--faint)}
+  .dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+  .dot.mid{background:var(--amber);box-shadow:0 0 8px var(--amber);animation:blink 1s infinite}
+  .dot.bad{background:var(--red)}
+  .dot.idle{background:var(--faint)}
+  @keyframes blink{50%{opacity:.35}}
+
+  .creed{border-left:2px solid var(--line2);padding:4px 0 4px 14px;margin:18px 0 22px;
+    color:var(--muted);font-size:13px;line-height:1.6}
+  .creed b{color:var(--text);font-weight:600}
+
+  /* ---- panels ---- */
+  .card{background:linear-gradient(180deg,var(--panel),var(--ink2));border:1px solid var(--line);
+    border-radius:16px;padding:20px;box-shadow:var(--shadow);margin-bottom:18px}
+  .lbl{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);margin:0 0 8px;font-weight:600}
+  input[type=password],input[type=text],textarea{
+    width:100%;background:var(--ink);border:1px solid var(--line);border-radius:10px;
+    color:var(--text);font-size:14px;padding:11px 12px;font-family:var(--sans);outline:none}
+  input:focus,textarea:focus{border-color:var(--amber-dim);box-shadow:0 0 0 3px rgba(245,181,68,.12)}
+  textarea{resize:vertical;min-height:78px;font-family:var(--mono);font-size:12px;line-height:1.5;
+    word-break:break-all}
+  .hint{color:var(--faint);font-size:12px;margin:7px 2px 0;line-height:1.5}
+
+  .seg{display:flex;gap:8px;margin-top:14px}
+  .seg button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:11px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+  .seg button.active{background:rgba(245,181,68,.12);border-color:var(--amber-dim);color:var(--amber)}
+
+  button.act{background:var(--amber);color:#241a02;border:none;padding:11px 16px;border-radius:10px;
+    font-size:14px;font-weight:700;cursor:pointer;font-family:var(--sans)}
+  button.act:hover{filter:brightness(1.06)}
+  button.ghost{background:transparent;border:1px solid var(--line2);color:var(--text);
+    padding:10px 14px;border-radius:10px;font-size:13px;cursor:pointer;font-family:var(--sans)}
+  button.ghost:hover{border-color:var(--amber-dim)}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .step{margin-top:20px}
+  .step .lbl span{color:var(--amber);font-family:var(--mono)}
+
+  /* ---- session ---- */
+  .sesshead{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .badge{font-size:11px;font-family:var(--mono);padding:4px 9px;border-radius:999px;font-weight:600}
+  .badge-strong{background:rgba(71,209,143,.14);color:var(--green);border:1px solid rgba(71,209,143,.3)}
+  .badge-weak{background:rgba(245,181,68,.14);color:var(--amber);border:1px solid rgba(245,181,68,.3)}
+
+  #feed{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow-y:auto;padding:4px 2px 8px}
+  .bubble{max-width:78%;padding:9px 13px;border-radius:14px;font-size:14px;line-height:1.45;
+    white-space:pre-wrap;word-break:break-word}
+  .bubble.me{align-self:flex-end;background:var(--amber);color:#241a02;border-bottom-right-radius:5px}
+  .bubble.them{align-self:flex-start;background:var(--panel2);border:1px solid var(--line);
+    border-bottom-left-radius:5px}
+  .bubble.file a{font-weight:600;text-decoration:none}
+  .fmeta{color:var(--faint);font-size:12px}
+
+  .composer{display:flex;gap:10px;margin-top:14px}
+  .composer input{flex:1}
+  .dropzone{margin-top:12px;border:1.5px dashed var(--line2);border-radius:12px;padding:22px;
+    text-align:center;color:var(--muted);cursor:pointer;font-size:13px;transition:.15s}
+  .dropzone:hover,.dropzone.hover{border-color:var(--amber);color:var(--amber);background:rgba(245,181,68,.05)}
+
+  #transfers{margin-top:12px;display:flex;flex-direction:column;gap:8px}
+  .prow{display:grid;grid-template-columns:1fr 120px 44px;align-items:center;gap:10px;font-size:12px}
+  .pname{font-family:var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pbar{height:6px;background:var(--ink);border-radius:999px;overflow:hidden}
+  .pfill{height:100%;width:0;background:var(--amber);transition:width .15s}
+  .prow.ok .pfill{background:var(--green)}
+  .prow.bad .pfill{background:var(--red)}
+  .ppct{text-align:right;font-family:var(--mono);color:var(--muted)}
+
+  #log{margin-top:16px;background:var(--ink);border:1px solid var(--line);border-radius:10px;
+    padding:10px 12px;max-height:130px;overflow-y:auto;font-family:var(--mono);font-size:11.5px;
+    color:var(--faint);line-height:1.7}
+  .log-line.ok{color:var(--green)} .log-line.warn{color:var(--amber)}
+
+  footer{color:var(--faint);font-size:11.5px;line-height:1.7;margin-top:26px;text-align:center}
+  @media (max-width:520px){ .prow{grid-template-columns:1fr 80px 40px} h1{font-size:19px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="sigil"><div class="ring"></div><div class="ring r2"></div><div class="core"></div></div>
+    <div>
+      <h1>Beacon<span>.</span></h1>
+      <p class="tag">Encrypted transfer over your local network — no server, no trace</p>
+    </div>
+    <div class="status"><span id="statusDot" class="dot idle"></span><span id="statusText">Idle</span></div>
+  </header>
+
+  <div class="creed">
+    Two devices exchange one code by hand, then talk <b>directly</b> to each other.
+    Nothing routes through any server, so there's no middle party to log or inspect it.
+    The link is DTLS-encrypted; add a <b>shared passphrase</b> and everything is wrapped again
+    in AES-256-GCM that only your two devices can open.
+  </div>
+
+  <!-- ============ SETUP ============ -->
+  <div id="setup">
+    <div class="card">
+      <label class="lbl" for="pass">Shared passphrase <span style="color:var(--faint);text-transform:none;letter-spacing:0">(both devices enter the same words)</span></label>
+      <input type="password" id="pass" placeholder="e.g. seven-lantern-quiet-river" autocomplete="off" />
+      <p class="hint">Choose it together over a channel you trust (say it aloud, or in person). This is the key that makes the transfer end-to-end encrypted — leave it blank to rely on transport encryption alone.</p>
+
+      <div class="seg">
+        <button id="btnCreate">Send / start link</button>
+        <button id="btnJoin">Join a link</button>
+      </div>
+    </div>
+
+    <!-- HOST -->
+    <div id="hostFlow" class="card hidden">
+      <div class="step">
+        <label class="lbl"><span>1.</span> Create your invite</label>
+        <button class="act" id="genOffer">Generate invite code</button>
+      </div>
+      <div id="offerOutWrap" class="step hidden">
+        <label class="lbl"><span>2.</span> Send this to the other device</label>
+        <textarea id="offerOut" readonly onclick="this.select()"></textarea>
+        <div class="row"><button class="ghost" id="copyOffer">Copy invite</button></div>
+        <p class="hint">Share it however you like — the code is useless without the passphrase.</p>
+      </div>
+      <div id="answerInWrap" class="step hidden">
+        <label class="lbl"><span>3.</span> Paste their reply</label>
+        <textarea id="answerIn" placeholder="Paste the reply code from the other device"></textarea>
+        <div class="row"><button class="act" id="applyAnswer">Connect</button></div>
+      </div>
+    </div>
+
+    <!-- GUEST -->
+    <div id="guestFlow" class="card hidden">
+      <div class="step">
+        <label class="lbl"><span>1.</span> Paste the invite you received</label>
+        <textarea id="offerIn" placeholder="Paste the invite code from the sender"></textarea>
+        <div class="row"><button class="act" id="genAnswer">Generate reply</button></div>
+      </div>
+      <div id="answerOutWrap" class="step hidden">
+        <label class="lbl"><span>2.</span> Send this reply back</label>
+        <textarea id="answerOut" readonly onclick="this.select()"></textarea>
+        <div class="row"><button class="ghost" id="copyAnswer">Copy reply</button></div>
+        <p class="hint">Once the sender pastes this and taps Connect, the link opens automatically.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SESSION ============ -->
+  <div id="session" class="hidden">
+    <div class="card">
+      <div class="sesshead">
+        <label class="lbl" style="margin:0">Encrypted session</label>
+        <span id="encBadge" class="badge badge-strong">AES-256-GCM + DTLS</span>
+      </div>
+      <div id="feed"></div>
+      <div class="composer">
+        <input type="text" id="msgInput" placeholder="Type a message…" autocomplete="off" />
+        <button class="act" id="sendMsg">Send</button>
+      </div>
+      <div class="dropzone" id="dropzone">Drop files here, or tap to choose — sent chunk-by-chunk, encrypted</div>
+      <input type="file" id="fileInput" multiple class="hidden" />
+      <div id="transfers"></div>
+    </div>
+  </div>
+
+  <div id="log"></div>
+
+  <footer>
+    Runs entirely in your browser. Works on macOS, Windows, iOS and Android via Safari, Chrome or Edge.<br>
+    No analytics, no accounts, no outbound requests beyond the direct link between your two devices.
+  </footer>
+</div>
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ * Beacon — serverless, end-to-end encrypted local transfer
+ * No servers, no accounts, no telemetry. Signaling is done by hand
+ * (copy/paste a code) so nothing ever touches a third party. The
+ * payload rides a WebRTC DataChannel (DTLS encrypted) and is wrapped
+ * again in AES-256-GCM keyed from a shared passphrase.
+ * ------------------------------------------------------------------ */
+
+const state = {
+  pc: null,
+  dc: null,
+  key: null,          // CryptoKey or null (transport-only)
+  salt: null,         // Uint8Array
+  role: null,         // 'host' | 'guest'
+  incoming: null,     // active inbound file
+  procChain: Promise.resolve(),
+  bufResolve: null,
+  sending: false,
+};
+
+const CHUNK = 16 * 1024;
+const HIGH_WATER = 1 * 1024 * 1024;
+const LOW_WATER = 256 * 1024;
+
+/* ---------- tiny DOM helpers ---------- */
+const $ = (id) => document.getElementById(id);
+function show(el) { el.classList.remove("hidden"); }
+function hide(el) { el.classList.add("hidden"); }
+function log(msg, kind) {
+  const line = document.createElement("div");
+  line.className = "log-line" + (kind ? " " + kind : "");
+  const t = new Date().toLocaleTimeString();
+  line.textContent = "[" + t + "] " + msg;
+  const box = $("log");
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+function fmtBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + " MB";
+  return (n / 1073741824).toFixed(2) + " GB";
+}
+
+/* ---------- base64url ---------- */
+function b64urlEncode(u8) {
+  let s = "";
+  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64urlDecode(str) {
+  str = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (str.length % 4) str += "=";
+  const bin = atob(str);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+function b64Encode(u8) {
+  let s = "";
+  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+  return btoa(s);
+}
+function b64Decode(str) {
+  const bin = atob(str);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+
+/* ---------- gzip pack/unpack for compact connection codes ---------- */
+async function pack(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  if ("CompressionStream" in window) {
+    const cs = new CompressionStream("gzip");
+    const w = cs.writable.getWriter();
+    w.write(bytes); w.close();
+    const out = new Uint8Array(await new Response(cs.readable).arrayBuffer());
+    return "1" + b64urlEncode(out);
+  }
+  return "0" + b64urlEncode(bytes);
+}
+async function unpack(code) {
+  code = code.trim();
+  const flag = code[0];
+  const bytes = b64urlDecode(code.slice(1));
+  let json;
+  if (flag === "1") {
+    const ds = new DecompressionStream("gzip");
+    const w = ds.writable.getWriter();
+    w.write(bytes); w.close();
+    json = new TextDecoder().decode(await new Response(ds.readable).arrayBuffer());
+  } else {
+    json = new TextDecoder().decode(bytes);
+  }
+  return JSON.parse(json);
+}
+
+/* ---------- crypto (AES-256-GCM keyed from passphrase via PBKDF2) ---------- */
+async function deriveKey(pass, saltU8) {
+  const base = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: saltU8, iterations: 210000, hash: "SHA-256" },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+async function encBuf(buf) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, state.key, buf);
+  const out = new Uint8Array(12 + ct.byteLength);
+  out.set(iv, 0);
+  out.set(new Uint8Array(ct), 12);
+  return out.buffer;
+}
+async function decBuf(buf) {
+  const u8 = new Uint8Array(buf);
+  const iv = u8.slice(0, 12);
+  const ct = u8.slice(12);
+  return crypto.subtle.decrypt({ name: "AES-GCM", iv }, state.key, ct);
+}
+
+/* ---------- WebRTC ---------- */
+function iceComplete(pc) {
+  return new Promise((res) => {
+    if (pc.iceGatheringState === "complete") return res();
+    const check = () => {
+      if (pc.iceGatheringState === "complete") {
+        pc.removeEventListener("icegatheringstatechange", check);
+        res();
+      }
+    };
+    pc.addEventListener("icegatheringstatechange", check);
+    // Local host/mDNS candidates gather almost instantly; cap the wait.
+    setTimeout(res, 2500);
+  });
+}
+
+function newPeer() {
+  // Empty iceServers = LAN-only, fully serverless (no STUN/TURN contacted).
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  pc.oniceconnectionstatechange = () => {
+    const s = pc.iceConnectionState;
+    setStatus(s);
+    if (s === "failed" || s === "disconnected") log("Connection " + s + ".", "warn");
+  };
+  return pc;
+}
+
+function wireChannel(ch) {
+  state.dc = ch;
+  ch.binaryType = "arraybuffer";
+  ch.bufferedAmountLowThreshold = LOW_WATER;
+  ch.onopen = onConnected;
+  ch.onclose = () => { setStatus("closed"); log("Channel closed."); };
+  ch.onbufferedamountlow = () => {
+    if (state.bufResolve) { state.bufResolve(); state.bufResolve = null; }
+  };
+  ch.onmessage = (e) => {
+    state.procChain = state.procChain.then(() => handleData(e.data)).catch((err) => {
+      log("Receive error: " + err.message, "warn");
+    });
+  };
+}
+
+async function createOffer() {
+  const pass = $("pass").value;
+  state.role = "host";
+  state.salt = crypto.getRandomValues(new Uint8Array(16));
+  if (pass) state.key = await deriveKey(pass, state.salt);
+
+  state.pc = newPeer();
+  const ch = state.pc.createDataChannel("beacon", { ordered: true });
+  wireChannel(ch);
+
+  const offer = await state.pc.createOffer();
+  await state.pc.setLocalDescription(offer);
+  await iceComplete(state.pc);
+
+  const code = await pack({
+    v: 1,
+    sdp: state.pc.localDescription.sdp,
+    type: state.pc.localDescription.type,
+    salt: b64Encode(state.salt),
+    enc: !!pass,
+  });
+  $("offerOut").value = code;
+  show($("offerOutWrap"));
+  show($("answerInWrap"));
+  log("Invite created. Send it to the other device, then paste their reply below.");
+}
+
+async function acceptOfferAndAnswer() {
+  const pass = $("pass").value;
+  const code = $("offerIn").value.trim();
+  if (!code) { log("Paste the invite code first.", "warn"); return; }
+  state.role = "guest";
+
+  let data;
+  try { data = await unpack(code); }
+  catch (e) { log("That invite code could not be read. Check for a copy/paste error.", "warn"); return; }
+
+  if (data.enc && !pass) {
+    log("This invite expects a passphrase. Enter the same one the sender used.", "warn");
+    return;
+  }
+  state.salt = b64Decode(data.salt);
+  if (pass) state.key = await deriveKey(pass, state.salt);
+
+  state.pc = newPeer();
+  state.pc.ondatachannel = (e) => wireChannel(e.channel);
+
+  await state.pc.setRemoteDescription({ type: data.type, sdp: data.sdp });
+  const answer = await state.pc.createAnswer();
+  await state.pc.setLocalDescription(answer);
+  await iceComplete(state.pc);
+
+  const out = await pack({
+    v: 1,
+    sdp: state.pc.localDescription.sdp,
+    type: state.pc.localDescription.type,
+  });
+  $("answerOut").value = out;
+  show($("answerOutWrap"));
+  log("Reply created. Send it back to the sender to finish connecting.");
+}
+
+async function applyAnswer() {
+  const code = $("answerIn").value.trim();
+  if (!code) { log("Paste the reply code first.", "warn"); return; }
+  let data;
+  try { data = await unpack(code); }
+  catch (e) { log("That reply code could not be read.", "warn"); return; }
+  await state.pc.setRemoteDescription({ type: data.type, sdp: data.sdp });
+  log("Reply accepted. Establishing the encrypted link…");
+}
+
+function onConnected() {
+  setStatus("connected");
+  log("Encrypted channel open." + (state.key ? " Passphrase layer active." : " Transport encryption only."), "ok");
+  hide($("setup"));
+  show($("session"));
+  $("encBadge").textContent = state.key ? "AES-256-GCM + DTLS" : "DTLS only";
+  $("encBadge").className = "badge " + (state.key ? "badge-strong" : "badge-weak");
+}
+
+/* ---------- messaging + files ---------- */
+function sendControl(obj) { state.dc.send(JSON.stringify(obj)); }
+
+function waitDrain() {
+  if (state.dc.bufferedAmount <= HIGH_WATER) return Promise.resolve();
+  return new Promise((res) => { state.bufResolve = res; });
+}
+
+async function sendText() {
+  const input = $("msgInput");
+  const text = input.value;
+  if (!text || !state.dc || state.dc.readyState !== "open") return;
+  let payload = new TextEncoder().encode(text).buffer;
+  if (state.key) payload = await encBuf(payload);
+  sendControl({ t: "msg", enc: !!state.key, d: b64Encode(new Uint8Array(payload)) });
+  addMessage(text, "me");
+  input.value = "";
+}
+
+async function sendFiles(fileList) {
+  const files = Array.from(fileList);
+  if (!files.length || !state.dc || state.dc.readyState !== "open") return;
+  if (state.sending) { log("A transfer is already in progress — queued.", "warn"); }
+  for (const f of files) await sendOneFile(f);
+}
+
+async function sendOneFile(file) {
+  state.sending = true;
+  const id = crypto.getRandomValues(new Uint32Array(2)).join("");
+  const row = makeProgressRow("↑ " + file.name, file.size);
+  sendControl({ t: "fstart", id, name: file.name, size: file.size, mime: file.type, enc: !!state.key });
+
+  let sent = 0;
+  for (let off = 0; off < file.size; off += CHUNK) {
+    const slice = await file.slice(off, off + CHUNK).arrayBuffer();
+    const payload = state.key ? await encBuf(slice) : slice;
+    await waitDrain();
+    if (state.dc.readyState !== "open") { row.fail(); state.sending = false; return; }
+    state.dc.send(payload);
+    sent += slice.byteLength;
+    row.update(sent);
+  }
+  sendControl({ t: "fend", id });
+  row.done();
+  log("Sent " + file.name + " (" + fmtBytes(file.size) + ").", "ok");
+  state.sending = false;
+}
+
+async function handleData(data) {
+  if (typeof data === "string") {
+    const m = JSON.parse(data);
+    if (m.t === "msg") {
+      let buf = b64Decode(m.d).buffer;
+      if (m.enc) buf = await decBuf(buf);
+      addMessage(new TextDecoder().decode(buf), "them");
+    } else if (m.t === "fstart") {
+      state.incoming = { meta: m, chunks: [], received: 0, row: makeProgressRow("↓ " + m.name, m.size) };
+    } else if (m.t === "fend") {
+      finishIncoming();
+    }
+    return;
+  }
+  // binary => a chunk for the active inbound file
+  if (!state.incoming) return;
+  let buf = data;
+  if (state.incoming.meta.enc) buf = await decBuf(buf);
+  state.incoming.chunks.push(buf);
+  state.incoming.received += buf.byteLength;
+  state.incoming.row.update(state.incoming.received);
+}
+
+function finishIncoming() {
+  const inc = state.incoming;
+  if (!inc) return;
+  const blob = new Blob(inc.chunks, { type: inc.meta.mime || "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  inc.row.done();
+  addFileLink(inc.meta.name, inc.meta.size, url);
+  log("Received " + inc.meta.name + " (" + fmtBytes(inc.meta.size) + ").", "ok");
+  state.incoming = null;
+}
+
+/* ---------- UI plumbing ---------- */
+function setStatus(s) {
+  const dot = $("statusDot");
+  const label = $("statusText");
+  const map = {
+    connected: ["ok", "Connected"],
+    checking: ["mid", "Connecting…"],
+    completed: ["ok", "Connected"],
+    "new": ["idle", "Idle"],
+    closed: ["bad", "Disconnected"],
+    failed: ["bad", "Failed"],
+    disconnected: ["bad", "Dropped"],
+  };
+  const [cls, text] = map[s] || ["mid", s];
+  dot.className = "dot " + cls;
+  label.textContent = text;
+}
+
+function addMessage(text, who) {
+  const wrap = document.createElement("div");
+  wrap.className = "bubble " + who;
+  wrap.textContent = text;
+  const feed = $("feed");
+  feed.appendChild(wrap);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function addFileLink(name, size, url) {
+  const wrap = document.createElement("div");
+  wrap.className = "bubble them file";
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  a.textContent = "⬇ " + name;
+  const meta = document.createElement("span");
+  meta.className = "fmeta";
+  meta.textContent = " · " + fmtBytes(size);
+  wrap.appendChild(a); wrap.appendChild(meta);
+  const feed = $("feed");
+  feed.appendChild(wrap);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+function makeProgressRow(label, total) {
+  const row = document.createElement("div");
+  row.className = "prow";
+  row.innerHTML =
+    '<div class="pname"></div>' +
+    '<div class="pbar"><div class="pfill"></div></div>' +
+    '<div class="ppct">0%</div>';
+  row.querySelector(".pname").textContent = label;
+  $("transfers").appendChild(row);
+  const fill = row.querySelector(".pfill");
+  const pct = row.querySelector(".ppct");
+  return {
+    update(done) {
+      const p = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
+      fill.style.width = p + "%";
+      pct.textContent = p + "%";
+    },
+    done() { fill.style.width = "100%"; pct.textContent = "✓"; row.classList.add("ok"); },
+    fail() { pct.textContent = "✕"; row.classList.add("bad"); },
+  };
+}
+
+async function copyField(id) {
+  const el = $(id);
+  try {
+    await navigator.clipboard.writeText(el.value);
+    log("Copied to clipboard.");
+  } catch (e) {
+    el.select(); document.execCommand("copy");
+    log("Copied.");
+  }
+}
+
+/* ---------- wire up events ---------- */
+window.addEventListener("DOMContentLoaded", () => {
+  if (!("RTCPeerConnection" in window)) {
+    log("This browser doesn't support WebRTC. Use Safari, Chrome, or Edge.", "warn");
+  }
+  setStatus("new");
+
+  $("btnCreate").onclick = () => {
+    show($("hostFlow")); hide($("guestFlow"));
+    $("btnCreate").classList.add("active"); $("btnJoin").classList.remove("active");
+  };
+  $("btnJoin").onclick = () => {
+    show($("guestFlow")); hide($("hostFlow"));
+    $("btnJoin").classList.add("active"); $("btnCreate").classList.remove("active");
+  };
+
+  $("genOffer").onclick = () => createOffer().catch((e) => log("Error: " + e.message, "warn"));
+  $("copyOffer").onclick = () => copyField("offerOut");
+  $("applyAnswer").onclick = () => applyAnswer().catch((e) => log("Error: " + e.message, "warn"));
+
+  $("genAnswer").onclick = () => acceptOfferAndAnswer().catch((e) => log("Error: " + e.message, "warn"));
+  $("copyAnswer").onclick = () => copyField("answerOut");
+
+  $("sendMsg").onclick = () => sendText();
+  $("msgInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(); }
+  });
+  $("fileInput").addEventListener("change", (e) => { sendFiles(e.target.files); e.target.value = ""; });
+
+  const drop = $("dropzone");
+  ["dragenter", "dragover"].forEach((ev) =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("hover"); }));
+  ["dragleave", "drop"].forEach((ev) =>
+    drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("hover"); }));
+  drop.addEventListener("drop", (e) => sendFiles(e.dataTransfer.files));
+  drop.addEventListener("click", () => $("fileInput").click());
+});
+
+</script>
+</body>
+</html>
